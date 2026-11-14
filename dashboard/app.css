@@ -202,9 +202,36 @@ dialog.detail::backdrop { background: rgba(4, 8, 16, .72); }
 .comps tr:first-child td { border-top: 0; }
 .comps td.num { text-align: right; }
 
+/* Market line strip and charts */
+.marketline { margin-top: 4px; }
+.marketline h2 { margin: 0 0 6px; }
+.marketline p { color: var(--muted); max-width: 88ch; margin: 0; }
+.marketline-grid { display: grid; grid-template-columns: 1fr 1.35fr; gap: 24px; align-items: center; }
+.scatter { display: block; width: 100%; height: auto; }
+.scatter .grid { stroke: var(--line); stroke-width: 1; }
+.scatter .dot { fill: var(--gold-soft); opacity: .75; }
+.scatter .fitline { stroke: var(--gold); stroke-width: 2.5; }
+.scatter .axis { fill: var(--faint); font-size: 11px; }
+.catbars { display: block; width: 100%; height: auto; }
+.catbars .catlabel { fill: var(--text); font-size: 12.5px; }
+.catbars .catbar { fill: var(--gold); opacity: .85; }
+.catbars .catvalue { fill: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+
+/* Detail factor bars */
+.factors { margin: 12px 0 2px; }
+.factors h4 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.factor { display: grid; grid-template-columns: 150px 1fr 52px; gap: 10px; align-items: center; margin: 5px 0; }
+.factor-name { font-size: 13px; color: var(--muted); }
+.factor-track { display: block; height: 7px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.factor-track i { display: block; height: 100%; border-radius: 4px; }
+.factor-track i.up { background: var(--gold); }
+.factor-track i.down { background: var(--blue); opacity: .8; }
+.factor-val { font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+
 @media (max-width: 760px) {
   .lede { grid-template-columns: 1fr; }
   .equation { grid-template-columns: 1fr; }
   .count { margin-left: 0; }
   .detail-grid { grid-template-columns: 1fr; }
+  .marketline-grid { grid-template-columns: 1fr; }
 }

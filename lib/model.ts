@@ -1,4 +1,4 @@
-// Token Radar's value model (radar-2): one snapshot of the protocol universe in, one ranked board out.
+// Token Radar's value model (radar-3): one snapshot of the protocol universe in, one ranked board out.
 //
 // The board covers every slug in the snapshot's watchlist (the floor, never a ceiling) and every other
 // pre-token protocol the radar can rank: the early rows the radar exists to find. A protocol is
@@ -6,24 +6,39 @@
 // snapshot's live-token protocols are kept apart and shown as the market's own values, never mixed
 // into the ranked board.
 //
-// Implied value follows only from the snapshot's own figures, in four factors:
+// Implied value follows only from the snapshot's own figures, in five factors. The first is the
+// size-fitted market line, and it is the change from radar-2: the market does NOT pay a flat
+// multiple per TVL dollar. Across the snapshot's own live-token protocols, a protocol ten times
+// larger is worth only about four times more (the log-log slope is about 0.64, not 1.0), and the
+// median market-cap-per-TVL falls from 0.42x for protocols under $50M of TVL to 0.03x above $1B.
+// A flat ratio therefore overprices the giants by an order of magnitude and underprices the early
+// ones the radar exists to find. Radar-3 fits the market's own line instead:
 //
-//   multiple   the market's own price for this kind of protocol: the median market-cap-per-TVL of
-//              the live-token protocols in the same category, shrunk toward the global median when
-//              the category has few live protocols, and clamped to [0.02, 2.0] so one outlier
-//              cannot set the price for a whole category. A category with no live protocol at all
-//              uses the global median. No name is ever special-cased.
-//   growth     1 + clamp(change_7d, -60, 120) / 100 * 0.5 — a protocol growing fast is worth more
-//              than the same TVL standing still; a shrinking one is worth less.
-//   age        a track record with no token yet: 0.75 for a newborn protocol, rising to 1.00 at two
-//              years of running, then easing to 0.85 for a very long tokenless run, which reads as
-//              a team in no hurry to launch. Unknown age counts as one year.
-//   chains     1 + 0.02 per extra chain, up to four — reach across chains is worth a little more.
+//   log10(market cap) = intercept[category] + slope * log10(tvl_usd)
 //
-//   implied = max(1, round(tvl_usd * multiple * growth * age * chains))
+//   slope        the market's size elasticity, fitted within categories over the live-token
+//                protocols (each category demeaned, then pooled), so the category mix cannot
+//                fake a size effect. About 0.64 here: ten times the TVL is worth ~4.4x the value.
+//   intercept    one per category: the mean of (log10 mcap - slope * log10 TVL) over that
+//                category's live protocols, shrunk toward the global intercept by `shrink_k`
+//                phantom protocols at the global value, so a category with one live token does
+//                not set its own price. A category with no live protocol uses the global intercept.
+//   multiple     the size-adjusted multiple this row is priced with: base / tvl_usd, where base is
+//                the fitted market cap above. It falls as TVL rises, which is the market's own
+//                shape, and it is clamped to [0.005, 5.0] so one outlier cannot set a price.
+//   growth       1 + clamp(change_7d, -60, 120) / 100 * 0.5 — a protocol growing fast is worth more
+//                than the same TVL standing still; a shrinking one is worth less.
+//   age          a track record with no token yet: 0.75 for a newborn protocol, rising to 1.00 at two
+//                years of running, then easing to 0.85 for a very long tokenless run, which reads as
+//                a team in no hurry to launch. Unknown age counts as one year.
+//   chains       1 + 0.02 per extra chain, up to four — reach across chains is worth a little more.
 //
-// The dashboard states the formula and the calibration table, and recomputes every row from the
-// same figures, so the page's code and the board's data are visibly the same arithmetic.
+//   implied = max(1, round(base * growth * age * chains))
+//
+// The dashboard states the formula, the fitted slope and intercept, the fit's R-squared and residual
+// spread, and the calibration table, and it draws the fitted line through the live protocols' own
+// points, so the page's code and the board's data are visibly the same arithmetic. No name is ever
+// special-cased.
 
 /** The snapshot's protocol entry: exactly the ten fields the sealed input carries. */
 export interface SnapshotProtocol {
@@ -79,12 +94,12 @@ export const MODEL: ModelConstants = {
   chain_step: 0.02,
   chain_max_extra: 4,
   shrink_k: 8,
-  multiple_floor: 0.02,
-  multiple_cap: 2.0,
+  multiple_floor: 0.005,
+  multiple_cap: 5.0,
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'radar-2';
+export const MODEL_VERSION = 'radar-3';
 
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -166,12 +181,29 @@ export interface Comparable {
   ratio: number;
 }
 
+/** One live-token protocol as a point on the fitted line: TVL and market cap, with its category. */
+export interface Calibrator {
+  tvl_usd: number;
+  mcap_usd: number;
+  category: string | null;
+}
+
+/** The fitted market line the dashboard draws and states: slope, intercept, fit quality. */
+export interface MarketFit {
+  slope: number;
+  global_intercept: number;
+  r2: number;
+  residual_sd: number;
+  live_count: number;
+}
+
 /** One row of the calibration table the dashboard shows: category, sample size, multiple. */
 export interface CalibrationRow {
   category: string;
   live_count: number;
   median_ratio: number | null;
   multiple: number;
+  intercept: number;
 }
 
 /** Everything the dashboard needs: the board, the live set, the calibration and the model it runs. */
@@ -191,6 +223,8 @@ export interface RadarData {
   live: LiveRow[];
   calibration: CalibrationRow[];
   comparables: Record<string, Comparable[]>;
+  fit: MarketFit;
+  calibrators: Calibrator[];
 }
 
 /** Why the snapshot is not one this model can score. */
@@ -243,13 +277,14 @@ export function chainFactor(chains: string[], model: ModelConstants): number {
 
 const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
 
-/** The four factors and the implied value one protocol gets under `model` and `multiples`. */
+/** The five factors and the implied value one protocol gets under `model` and the fitted line. */
 export function impliedValue(
   protocol: SnapshotProtocol,
   asOf: string,
   model: ModelConstants,
-  multiples: Map<string, number>,
-  globalMultiple: number,
+  intercepts: Map<string, number>,
+  globalIntercept: number,
+  slope: number,
 ): { implied: number; multiple: number; growthPct: number; growthMult: number; ageF: number; chainF: number; age: number | null } {
   const age = ageDays(asOf, protocol.listed_at);
   const rawGrowth = finite(protocol.change_7d, 0);
@@ -257,7 +292,9 @@ export function impliedValue(
   const growthMult = 1 + (growthPct / 100) * model.growth_weight;
   const ageF = ageFactor(age, model);
   const chainF = chainFactor(protocol.chains, model);
-  const multiple = multiples.get(protocol.category ?? '') ?? globalMultiple;
+  const intercept = intercepts.get(protocol.category ?? '') ?? globalIntercept;
+  const base = Math.pow(10, intercept + slope * Math.log10(protocol.tvl_usd));
+  const multiple = Math.min(model.multiple_cap, Math.max(model.multiple_floor, base / protocol.tvl_usd));
   const implied = Math.max(1, Math.round(protocol.tvl_usd * multiple * growthMult * ageF * chainF));
   return { implied, multiple, growthPct, growthMult, ageF, chainF, age };
 }
@@ -299,7 +336,7 @@ export function isRankable(p: SnapshotProtocol): boolean {
   return true;
 }
 
-/** Whether a live-token protocol can calibrate the market multiple: it records both a market cap and a TVL. */
+/** Whether a live-token protocol can calibrate the market line: it records both a market cap and a TVL. */
 function isCalibrator(p: SnapshotProtocol): boolean {
   return (
     !isPreToken(p) &&
@@ -312,40 +349,100 @@ function isCalibrator(p: SnapshotProtocol): boolean {
 }
 
 /**
- * The market multiples, derived from the snapshot's own live protocols: for each category the median
- * market-cap-per-TVL of its live protocols, shrunk toward the global median by `shrink_k` phantom
- * protocols at the global value, then clamped. Categories with no live protocol fall back to the
- * global median. The calibration table is returned alongside, for the dashboard to show.
+ * The fitted market line, derived from the snapshot's own live protocols: log10(market cap) =
+ * intercept[category] + slope * log10(TVL). The slope is fitted within categories (each category
+ * demeaned, then pooled), so the category mix cannot fake a size effect; each category's intercept
+ * is its live protocols' mean residual, shrunk toward the global intercept by `shrink_k` phantom
+ * protocols at the global value. Categories with no live protocol fall back to the global intercept.
+ * The calibration table is returned alongside, for the dashboard to show, with each category's
+ * fitted multiple at $100M of TVL so the categories read on one scale.
  */
 export function calibrate(
   snapshot: Snapshot,
   model: ModelConstants,
-): { multiples: Map<string, number>; globalMultiple: number; table: CalibrationRow[]; liveCount: number } {
+): {
+  intercepts: Map<string, number>;
+  globalIntercept: number;
+  slope: number;
+  fit: MarketFit;
+  table: CalibrationRow[];
+  liveCount: number;
+  calibrators: Calibrator[];
+} {
   const live = snapshot.protocols.filter(isCalibrator);
-  const global = median(live.map((p) => p.mcap_usd! / p.tvl_usd)) ?? 0.2;
-  const byCategory = new Map<string, number[]>();
+  const byCategory = new Map<string, SnapshotProtocol[]>();
   for (const p of live) {
     const key = p.category ?? '';
     const list = byCategory.get(key) ?? [];
-    list.push(p.mcap_usd! / p.tvl_usd);
+    list.push(p);
     byCategory.set(key, list);
   }
-  const multiples = new Map<string, number>();
+  // The size elasticity, fitted within categories: demean log TVL and log mcap inside each
+  // category with at least two live protocols, then pool the demeaned pairs through the origin.
+  let sxx = 0;
+  let sxy = 0;
+  for (const list of byCategory.values()) {
+    if (list.length < 2) continue;
+    const mx = list.reduce((s, p) => s + Math.log10(p.tvl_usd), 0) / list.length;
+    const my = list.reduce((s, p) => s + Math.log10(p.mcap_usd!), 0) / list.length;
+    for (const p of list) {
+      const dx = Math.log10(p.tvl_usd) - mx;
+      const dy = Math.log10(p.mcap_usd!) - my;
+      sxx += dx * dx;
+      sxy += dx * dy;
+    }
+  }
+  const slope = sxx > 0 ? sxy / sxx : 1;
+  // The global intercept: the mean of (log10 mcap - slope * log10 TVL) over every live protocol.
+  const globalIntercept =
+    live.length > 0
+      ? live.reduce((s, p) => s + (Math.log10(p.mcap_usd!) - slope * Math.log10(p.tvl_usd)), 0) / live.length
+      : 0;
+  const intercepts = new Map<string, number>();
   const table: CalibrationRow[] = [];
   const categories = [...new Set(snapshot.protocols.map((p) => p.category ?? ''))].sort();
   for (const category of categories) {
-    const ratios = byCategory.get(category) ?? [];
-    const catMedian = median(ratios);
-    const shrunk =
-      catMedian === null
-        ? global
-        : (ratios.length * catMedian + model.shrink_k * global) / (ratios.length + model.shrink_k);
-    const multiple = round4(Math.min(model.multiple_cap, Math.max(model.multiple_floor, shrunk)));
-    multiples.set(category, multiple);
-    table.push({ category: category === '' ? '(no category)' : category, live_count: ratios.length, median_ratio: catMedian, multiple });
+    const list = byCategory.get(category) ?? [];
+    const raw =
+      list.length > 0
+        ? list.reduce((s, p) => s + (Math.log10(p.mcap_usd!) - slope * Math.log10(p.tvl_usd)), 0) / list.length
+        : globalIntercept;
+    const shrunk = (list.length * raw + model.shrink_k * globalIntercept) / (list.length + model.shrink_k);
+    intercepts.set(category, shrunk);
+    const ratios = list.map((p) => p.mcap_usd! / p.tvl_usd);
+    const at100m = Math.pow(10, shrunk + slope * 8) / 100_000_000;
+    table.push({
+      category: category === '' ? '(no category)' : category,
+      live_count: list.length,
+      median_ratio: median(ratios),
+      multiple: round4(Math.min(model.multiple_cap, Math.max(model.multiple_floor, at100m))),
+      intercept: round4(shrunk),
+    });
   }
   table.sort((a, b) => b.live_count - a.live_count || (a.category < b.category ? -1 : 1));
-  return { multiples, globalMultiple: global, table, liveCount: live.length };
+  // Fit quality, on the line the model actually uses (per-category intercepts, common slope).
+  const meanY = live.length > 0 ? live.reduce((s, p) => s + Math.log10(p.mcap_usd!), 0) / live.length : 0;
+  let ssRes = 0;
+  let ssTot = 0;
+  for (const p of live) {
+    const pred = (intercepts.get(p.category ?? '') ?? globalIntercept) + slope * Math.log10(p.tvl_usd);
+    const y = Math.log10(p.mcap_usd!);
+    ssRes += (y - pred) * (y - pred);
+    ssTot += (y - meanY) * (y - meanY);
+  }
+  const r2 = ssTot > 0 ? 1 - ssRes / ssTot : 0;
+  const residualSd = live.length > 0 ? Math.sqrt(ssRes / live.length) : 0;
+  const fit: MarketFit = {
+    slope: round4(slope),
+    global_intercept: round4(globalIntercept),
+    r2: round4(r2),
+    residual_sd: round4(residualSd),
+    live_count: live.length,
+  };
+  const calibrators: Calibrator[] = live
+    .map((p) => ({ tvl_usd: p.tvl_usd, mcap_usd: p.mcap_usd!, category: p.category }))
+    .sort((a, b) => a.tvl_usd - b.tvl_usd);
+  return { intercepts, globalIntercept, slope, fit, table, liveCount: live.length, calibrators };
 }
 
 /** The snapshot's protocol by slug. */
@@ -357,8 +454,8 @@ function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
 export function buildBoard(
   snapshot: Snapshot,
   model: ModelConstants = MODEL,
-): { board: BoardRow[]; calibration: CalibrationRow[]; globalMultiple: number; calibrationLive: number } {
-  const { multiples, globalMultiple, table, liveCount } = calibrate(snapshot, model);
+): { board: BoardRow[]; calibration: CalibrationRow[]; globalMultiple: number; calibrationLive: number; fit: MarketFit; calibrators: Calibrator[] } {
+  const { intercepts, globalIntercept, slope, fit, table, liveCount, calibrators } = calibrate(snapshot, model);
   const index = bySlug(snapshot.protocols);
   const chosen = new Map<string, SnapshotProtocol>();
   // The watchlist is the floor: every slug, even one the snapshot no longer carries (it cannot, but
@@ -375,7 +472,7 @@ export function buildBoard(
 
   const watchlist = new Set(snapshot.watchlist);
   const scored = [...chosen.values()].map((p) => {
-    const v = impliedValue(p, snapshot.as_of, model, multiples, globalMultiple);
+    const v = impliedValue(p, snapshot.as_of, model, intercepts, globalIntercept, slope);
     return { p, v };
   });
   scored.sort((a, b) => b.v.implied - a.v.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
@@ -395,16 +492,24 @@ export function buildBoard(
     age_days: s.v.age,
     implied_value_usd: s.v.implied,
     model: {
-      multiple: round4(s.v.multiple),
+      // The multiple is stored at full precision, not rounded: the dashboard recomputes this row
+      // from it, and a rounded multiple would recompute to a different implied value.
+      multiple: s.v.multiple,
       growth_pct: s.v.growthPct,
       growth_multiplier: round4(s.v.growthMult),
       age_factor: round4(s.v.ageF),
       chain_factor: round4(s.v.chainF),
       age_days: s.v.age,
     },
-    farm_steps: farmSteps(s.p, s.v.age).map(stepText),
+    farm_steps: farmSteps(s.p, s.v.age, s.v.implied).map(stepText),
   }));
-  return { board, calibration: table, globalMultiple, calibrationLive: liveCount };
+  // The global multiple the dashboard quotes is the fitted multiple at the board's median TVL.
+  const medianTvl = median(board.map((r) => r.tvl_usd)) ?? 0;
+  const globalMultiple =
+    medianTvl > 0
+      ? round4(Math.min(model.multiple_cap, Math.max(model.multiple_floor, Math.pow(10, globalIntercept + slope * Math.log10(medianTvl)) / medianTvl)))
+      : round4(Math.pow(10, globalIntercept));
+  return { board, calibration: table, globalMultiple, calibrationLive: liveCount, fit, calibrators };
 }
 
 /** A step as one string: its action, then its cost and time, within the gate's 20..600 characters. */
@@ -476,18 +581,58 @@ function weeklyActionFor(p: SnapshotProtocol, chain: string): string {
 }
 
 /**
- * A protocol's farm plan: seven steps, each an action with a cost and a time. The plan is derived
- * from the protocol's own record (category, chains, TVL, age), never from a hand-written list of names.
+ * What to watch before adding more: the protocol's own seven-day move, in words a farmer can act on.
+ * A sharp move is a signal to pause; a flat one is a signal to check the protocol's own page first.
  */
-export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
+function watchStepFor(p: SnapshotProtocol, chain: string): string {
+  const g = p.change_7d;
+  const name = p.name;
+  if (g === null) return `No seven-day change is reported for ${name}, so open its own TVL page on ${chain} and confirm the deposits are still there before you add more.`;
+  if (g >= 10) return `TVL jumped ${g.toFixed(1)}% in seven days: check whether the growth is new deposits on ${chain} or one large wallet, and only add more once the inflow holds for a second week.`;
+  if (g <= -10) return `TVL fell ${Math.abs(g).toFixed(1)}% in seven days: wait for the outflow on ${chain} to slow before you add more, and check the protocol's own page for what changed.`;
+  if (g >= 0) return `TVL moved +${g.toFixed(1)}% in seven days: steady, not hot. Add more only after the next weekly check confirms the direction.`;
+  return `TVL moved ${g.toFixed(1)}% in seven days: a small dip, not a rout. Watch one more week on ${chain} before you add more.`;
+}
+
+/**
+ * A second front, so the wallet is not a single deposit: a second chain when the protocol runs on
+ * more than one, else a second touchpoint inside the same app.
+ */
+function secondFrontFor(p: SnapshotProtocol, chain: string, capital: number): string {
+  const name = p.name;
+  const others = p.chains.filter((c) => c !== chain);
+  if (others.length > 0) {
+    return `Open a second position on ${others[0]} with $${Math.max(25, Math.round(capital / 3))} so the wallet shows activity on two of ${name}'s ${p.chains.length} chains, not one.`;
+  }
+  const c = (p.category ?? '').toLowerCase();
+  if (c.includes('lend') || c.includes('cdp')) return `Lend a second asset on ${name} with $25 so the wallet shows more than one supply position on ${chain}.`;
+  if (c.includes('dex') || c.includes('yield')) return `Add $25 to a second pool on ${name} on ${chain} so the wallet shows two positions, not one.`;
+  if (c.includes('bridge')) return `Bridge $25 to a second destination through ${name} so the wallet shows two routes, not one.`;
+  if (c.includes('staking') || c.includes('restak')) return `Stake a second asset through ${name} with $25 so the wallet shows two stakes on ${chain}.`;
+  if (c.includes('perpetual') || c.includes('derivative')) return `Open a second small hedge on ${name} on ${chain} so the account shows two trades, not one.`;
+  if (c.includes('prediction')) return `Place a second market position on ${name} with $10 so the wallet shows two markets, not one.`;
+  if (c.includes('curator') || c.includes('allocator')) return `Deposit $25 into a second ${name} vault on ${chain} so the wallet shows two allocations, not one.`;
+  return `Use a second feature of ${name} on ${chain} with $25, such as a vote, a second pool or a second asset, so the wallet shows two touchpoints, not one.`;
+}
+
+/**
+ * A protocol's farm plan: seven steps, each an action with a cost and a time, every one derived
+ * from the protocol's own record (category, chains, TVL, age, seven-day move, implied value) —
+ * never from a hand-written list of names, and never the same plan twice: the chain, the capital,
+ * the hold, the weekly action, the watch and the second front all move with the protocol.
+ */
+export function farmSteps(p: SnapshotProtocol, age: number | null, implied: number): FarmStep[] {
   const chain = chainOf(p);
   const capital = capitalFor(p);
   const hold = holdDaysFor(age);
   const action = actionFor(p, capital, chain);
   const weekly = weeklyActionFor(p, chain);
+  const watch = watchStepFor(p, chain);
+  const second = secondFrontFor(p, chain, capital);
+  const impliedUsd = `$${implied.toLocaleString('en-US')}`;
   return [
     {
-      text: `Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.`,
+      text: `Use a fresh wallet on ${chain} that holds only the funds you plan to farm, and keep its seed phrase offline.`,
       cost: 'under $3 of gas for the first transaction',
       time: '5 minutes',
     },
@@ -502,22 +647,22 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
       time: '10 minutes a week',
     },
     {
-      text: `Hold the position for at least ${hold} days so the activity is counted in more than one snapshot.`,
+      text: `Hold the position for at least ${hold} days${age !== null && age < 180 ? ', longer than usual, because the protocol is only ' + Math.max(1, Math.round(age)) + ' days old and a young farm needs a longer qualifying window' : ' so the activity is counted in more than one snapshot'}.`,
       cost: `the $${capital} stays in the position`,
       time: `${hold} days`,
     },
     {
-      text: `Check the protocol's own points or rewards page every week, and write down what it counts before you change anything.`,
+      text: watch,
       cost: 'no fee to check',
       time: '10 minutes a week',
     },
     {
-      text: `Before you withdraw, open the protocol's own page and claim only from the link it publishes, and never pay anyone to claim for you.`,
-      cost: 'no fee to check, and never pay to claim',
-      time: '10 minutes',
+      text: second,
+      cost: 'about $2 of gas',
+      time: '15 minutes',
     },
     {
-      text: `Write the wallet, the dates and every transaction in a farm log, and plan the exit before you enter: check the sell price first, then unwind in small steps.`,
+      text: `Write the wallet, the dates and every transaction in a farm log, and plan the exit against the ${impliedUsd} implied value before you enter: check the sell price first, then unwind in small steps.`,
       cost: 'nothing but the log',
       time: '5 minutes',
     },
@@ -586,7 +731,7 @@ export function radarRow(row: BoardRow, watchlist: Set<string>): RadarRow {
 
 /** Everything the dashboard renders, from the snapshot. */
 export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): { board: BoardRow[]; radar: RadarData } {
-  const { board, calibration, globalMultiple, calibrationLive } = buildBoard(snapshot, model);
+  const { board, calibration, globalMultiple, calibrationLive, fit, calibrators } = buildBoard(snapshot, model);
   const live = liveRows(snapshot);
   const watchlist = new Set(snapshot.watchlist);
   const early = board.filter((r) => !watchlist.has(r.slug)).length;
@@ -606,6 +751,8 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     live,
     calibration,
     comparables: comparablesByCategory(snapshot),
+    fit,
+    calibrators,
   };
   return { board, radar };
 }

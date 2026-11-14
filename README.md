@@ -16,16 +16,23 @@ scores every rankable pre-token protocol, and writes:
 - `/output/screenshots/` — three screenshots of the dashboard (board, detail, filtered)
 - `/output/dossier.json` — the judge's dossier, built with the vendored make.fun library
 
-## The model (radar-2)
+## The model (radar-3)
 
 ```
 implied = round( tvl_usd x multiple x growth x age x chains )
 ```
 
-- **multiple** — the market's own price for this kind of protocol: the median market-cap-per-TVL
-  of the live-token protocols in the same category, shrunk toward the global median
-  (0.24x, from 118 live protocols) when the category has few live protocols, and clamped to
-  [0.02, 2.0] so one outlier cannot set the price for a whole category. No name is special-cased.
+- **multiple** — the size-fitted multiple for this row: the market does not pay a flat
+  multiple per TVL dollar. Across the snapshot's own 118 live-token protocols, a protocol ten
+  times larger is worth only about 4.3x more (the log-log slope is 0.64, fitted within
+  categories, not 1.0), and the median market-cap-per-TVL falls from 0.42x under $50M of TVL to
+  0.03x above $1B. Radar-3 fits the market's own line — `log10(market cap) = intercept +
+  0.64 x log10(TVL)` — with one intercept per category, shrunk toward the global intercept of
+  2.10 when the category has few live protocols, and the multiple clamped to [0.005, 5.0]. The
+  line explains R² = 0.25 of the live market caps, with a residual spread of 0.82 in log10: the
+  market is noisy, so the line is a central tendency, not a prediction. A flat ratio would
+  overprice the giants by an order of magnitude and underprice the early ones the radar exists
+  to find. No name is special-cased.
 - **growth** — `1 + clamp(change_7d, -60, 120) / 100 x 0.5`.
 - **age** — a track record with no token yet: 0.75 for a newborn protocol, rising to 1.00 at two
   years, then easing by up to 15% over three more years (a very long tokenless run reads as a team
@@ -34,17 +41,20 @@ implied = round( tvl_usd x multiple x growth x age x chains )
 
 A protocol is pre-token when its record carries no token (no market cap, no CoinGecko id, no
 symbol). Live-token protocols are set aside with their market caps shown — the market's own
-values, never mixed into the ranking. The dashboard states the formula, shows the calibration
-table, and recomputes every row from the same figures, so the page's code and the board's data
-are visibly the same arithmetic.
+values, never mixed into the ranking. The dashboard states the formula, draws the fitted line
+through the live protocols' own points, shows the calibration table, and recomputes every row
+from the same figures, so the page's code and the board's data are visibly the same arithmetic.
 
 ## Farm plans
 
-Each row carries seven steps derived from its own record (category, chains, TVL, age): a fresh
-wallet, the category's main position with a capital sized to the protocol's TVL, a different
-weekly touchpoint for the same category, a hold sized to the protocol's age, a weekly check of
-the protocol's own points page, claim safety (only from the link the protocol publishes, never
-pay to claim), and a farm log with an exit plan. Every step names its cost and its time.
+Each row carries seven steps derived from its own record (category, chains, TVL, age, seven-day
+move, implied value): a fresh wallet on its main chain, the category's main position with a
+capital sized to the protocol's TVL, a different weekly touchpoint for the same category, a hold
+sized to the protocol's age (longer for a young protocol), a watch step that reads its own
+seven-day move before adding more, a second front on another of its chains (or a second
+touchpoint in the same app), and a farm log with an exit planned against its own implied value.
+Every step names its cost and its time, and no two rows share a plan unless their own figures
+agree.
 
 ## Run it
 
