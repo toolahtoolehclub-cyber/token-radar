@@ -243,6 +243,7 @@
       else if (key === 'tvl') { av = a.tvl_usd; bv = b.tvl_usd; }
       else if (key === 'growth') { av = a.change_7d === null ? -Infinity : a.change_7d; bv = b.change_7d === null ? -Infinity : b.change_7d; }
       else if (key === 'age') { av = a.age_days === null ? Infinity : a.age_days; bv = b.age_days === null ? Infinity : b.age_days; }
+      else if (key === 'earns') { av = a.earns_per_1k_usd; bv = b.earns_per_1k_usd; }
       else { av = a.implied_value_usd; bv = b.implied_value_usd; }
       if (av < bv) return -state.dir;
       if (av > bv) return state.dir;
@@ -357,6 +358,7 @@
           el('b', { class: 'num', text: '$' + r.farm_capital_usd + ' · ' + r.farm_hold_days + 'd hold' }),
           el('span', { class: 'sub', text: r.farm_action + ' · ' + chain })
         )),
+        el('td', { class: 'num', text: '$' + r.earns_per_1k_usd.toFixed(2) }),
         el('td', null, el('span', { class: 'status', text: 'no token' }))
       );
       tbody.appendChild(tr);
@@ -369,7 +371,7 @@
       ),
       el('div', { class: 'table-wrap' },
         el('table', null,
-          el('caption', { class: 'sub', text: 'Pre-token protocols, strongest implied value first. Each row shows the model\u2019s point value and the range half of the priced tokens land in (×' + DATA.fit.band_low.toFixed(2) + ' to ×' + DATA.fit.band_high.toFixed(2) + ' of the point), and its farm ticket: the capital, the hold and the action. Select a row for its model, live comparables and farm plan.' }),
+          el('caption', { class: 'sub', text: 'Pre-token protocols, strongest implied value first. Each row shows the model\u2019s point value and the range half of the priced tokens land in (×' + DATA.fit.band_low.toFixed(2) + ' to ×' + DATA.fit.band_high.toFixed(2) + ' of the point), its farm ticket: the capital, the hold and the action — and what $1,000 deposited is expected to earn if 10% of the implied value is airdropped to farmers pro-rata by TVL. Select a row for its model, live comparables and farm plan.' }),
           el('thead', null, el('tr', null,
             sortHeader('implied', 'Rank'),
             sortHeader('name', 'Protocol'),
@@ -378,6 +380,7 @@
             sortHeader('age', 'Age'),
             sortHeader('implied', 'Implied value, and the model\u2019s range'),
             el('th', { scope: 'col', class: 'plain', text: 'Farm ticket' }),
+            sortHeader('earns', '$1k earns'),
             el('th', { scope: 'col', class: 'plain', text: 'Token' })
           )),
           tbody
@@ -547,7 +550,7 @@
           'implied = round( tvl_usd x multiple x growth x age x chains )'
         ),
         el('p', { text: 'multiple: the size-fitted multiple for this row — the fitted market line at its TVL, from log10(market cap) = intercept + ' + fit.slope.toFixed(2) + ' x log10(TVL), fitted within categories over ' + fit.live_count + ' live-token protocols, with each category\'s intercept shrunk toward the global intercept of ' + fit.global_intercept.toFixed(2) + ' and the multiple clamped to [' + m.multiple_floor + ', ' + m.multiple_cap + ']. The line explains R² = ' + fit.r2.toFixed(2) + ' of the live market caps, with a residual spread of ' + fit.residual_sd.toFixed(2) + ' in log10 — the market is noisy, so the line is a central tendency, not a prediction. A flat multiple would assume a slope of 1.0; the market\'s own slope is ' + fit.slope.toFixed(2) + '. growth: 1 + clamp(change_7d, ' + m.growth_floor + ', ' + m.growth_cap + ') / 100 x ' + m.growth_weight + '. age: ' + m.age_floor + ' for a newborn protocol, rising to ' + m.age_peak + ' at ' + Math.round(m.age_peak_days / 365) + ' years, then easing by up to ' + Math.round(m.age_decay * 100) + '% over ' + Math.round(m.age_decay_days / 365) + ' more years. chains: 1 + ' + m.chain_step + ' per extra chain, up to ' + m.chain_max_extra + '.' }),
-        el('p', { text: 'The range: every row carries the band half of the priced tokens land in — the 25th and 75th percentiles of (market cap / fitted market cap) over the ' + fit.live_count + ' calibrators, ×' + fit.band_low.toFixed(2) + ' to ×' + fit.band_high.toFixed(2) + ' of the point value. The point is the line\u2019s central estimate; the range is the market\u2019s own central spread, so a row that looks precise is not pretending to be. A farm ticket sits beside every row: the capital one position needs, the hold in days, and the action — the plan at a glance.' }),
+        el('p', { text: 'The range: every row carries the band half of the priced tokens land in — the 25th and 75th percentiles of (market cap / fitted market cap) over the ' + fit.live_count + ' calibrators, ×' + fit.band_low.toFixed(2) + ' to ×' + fit.band_high.toFixed(2) + ' of the point value. The point is the line\u2019s central estimate; the range is the market\u2019s own central spread, so a row that looks precise is not pretending to be. A farm ticket sits beside every row: the capital one position needs, the hold in days, and the action — the plan at a glance. Beside it, $1k earns: what $1,000 deposited is expected to earn if 10% of the implied value is airdropped to farmers pro-rata by TVL (100 × implied / TVL dollars). It is the farm ticket\u2019s answer to the farmer\u2019s real question — not how big the protocol is, but how much a dollar in it earns.' }),
         el('p', { text: 'TVL, seven-day growth and age come from the snapshot. Age is the time since the protocol was first listed, the best record of how long it has run with no token; an unlisted age uses ' + m.unknown_age_days + ' days. A protocol records no token, never that it has none: the snapshot cannot prove a token does not exist.' }),
         el('h3', { text: 'The fitted line through the live market' }),
         el('div', { html: scatterSVG(900, 260, true) }),
@@ -645,9 +648,10 @@
         el('div', null, el('span', { text: 'Seven-day growth' }), el('b', { class: 'num', text: fmtPct(row.change_7d) + ' → ' + row.growth_multiplier.toFixed(2) + 'x' })),
         el('div', null, el('span', { text: 'Age with no token' }), el('b', { class: 'num', text: fmtAge(row.age_days) + ' → ' + row.age_factor.toFixed(2) + 'x' })),
         el('div', null, el('span', { text: 'Chains (' + (row.chains || []).length + ')' }), el('b', { class: 'num', text: row.chain_factor.toFixed(2) + 'x' })),
-        el('div', { class: 'total' }, el('span', { text: 'Implied value' }), el('b', { class: 'num', text: fmtUsd(row.implied_value_usd) }))
+        el('div', { class: 'total' }, el('span', { text: 'Implied value' }), el('b', { class: 'num', text: fmtUsd(row.implied_value_usd) })),
+        el('div', null, el('span', { text: 'Expected airdrop per $1,000 deposited' }), el('b', { class: 'num', text: '$' + row.earns_per_1k_usd.toFixed(2) }))
       ),
-      el('p', { text: 'The range half of the priced tokens land in: ' + fmtUsd(row.implied_low_usd) + ' to ' + fmtUsd(row.implied_high_usd) + ' — the point times ×' + DATA.fit.band_low.toFixed(2) + ' to ×' + DATA.fit.band_high.toFixed(2) + '. The market is noisy (R² = ' + DATA.fit.r2.toFixed(2) + '), so the point is a central tendency and the range is the honest spread.' }),
+      el('p', { text: 'The range half of the priced tokens land in: ' + fmtUsd(row.implied_low_usd) + ' to ' + fmtUsd(row.implied_high_usd) + ' — the point times ×' + DATA.fit.band_low.toFixed(2) + ' to ×' + DATA.fit.band_high.toFixed(2) + '. The market is noisy (R² = ' + DATA.fit.r2.toFixed(2) + '), so the point is a central tendency and the range is the honest spread. The $1,000 figure assumes 10% of the implied value is airdropped to farmers pro-rata by TVL — the same assumption the top boards use — so a row whose implied value is small next to its TVL earns little per dollar deposited, however large its total.' }),
       el('div', { class: 'range-detail', html: rangeBar(row, rangeScale().lo, rangeScale().hi) }),
       factorBars(row),
       el('p', { class: 'sub', text: 'Model ' + DATA.model_version + ': the same function scores every protocol. The page recomputes this row as ' + fmtUsd(recomputed) + (recomputed === row.implied_value_usd ? ', the same number board.json carries.' : ', which differs from the board: the data would be stale.') + ' This is an estimate, not a price.' })

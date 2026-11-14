@@ -1,4 +1,4 @@
-// Token Radar's value model (radar-4): one snapshot of the protocol universe in, one ranked board out.
+// Token Radar's value model (radar-5): one snapshot of the protocol universe in, one ranked board out.
 //
 // The board covers every slug in the snapshot's watchlist (the floor, never a ceiling) and every other
 // pre-token protocol the radar can rank: the early rows the radar exists to find. A protocol is
@@ -107,7 +107,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'radar-4';
+export const MODEL_VERSION = 'radar-5';
 
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -140,6 +140,10 @@ export interface BoardRow {
   implied_value_usd: number;
   implied_low_usd: number;
   implied_high_usd: number;
+  // What a $1,000 deposit is expected to earn if 10% of the implied launch value is airdropped
+  // to farmers pro-rata by TVL: 0.10 x implied x (1000 / tvl) = 100 x implied / tvl dollars.
+  // The same assumption the top boards use for their per-$1k earnings column.
+  earns_per_1k_usd: number;
   farm_capital_usd: number;
   farm_hold_days: number;
   farm_action: string;
@@ -169,6 +173,9 @@ export interface RadarRow {
   implied_value_usd: number;
   implied_low_usd: number;
   implied_high_usd: number;
+  // What a $1,000 deposit is expected to earn if 10% of the implied launch value is airdropped
+  // to farmers pro-rata by TVL: 0.10 x implied x (1000 / tvl) = 100 x implied / tvl dollars.
+  earns_per_1k_usd: number;
   farm_capital_usd: number;
   farm_hold_days: number;
   farm_action: string;
@@ -535,6 +542,8 @@ export function buildBoard(
     // a range, not a false precision. Clamped at 1 and ordered low <= point <= high.
     implied_low_usd: Math.max(1, Math.round(s.v.implied * fit.band_low)),
     implied_high_usd: Math.max(1, Math.round(s.v.implied * fit.band_high)),
+    // Expected airdrop per $1,000 deposited (10% of implied value, pro-rata by TVL).
+    earns_per_1k_usd: Math.round((100 * s.v.implied / s.p.tvl_usd) * 100) / 100,
     farm_capital_usd: capitalFor(s.p),
     farm_hold_days: holdDaysFor(s.v.age),
     farm_action: farmActionLabel(s.p),
@@ -788,6 +797,7 @@ export function radarRow(row: BoardRow, watchlist: Set<string>): RadarRow {
     implied_value_usd: row.implied_value_usd,
     implied_low_usd: row.implied_low_usd,
     implied_high_usd: row.implied_high_usd,
+    earns_per_1k_usd: row.earns_per_1k_usd,
     farm_capital_usd: row.farm_capital_usd,
     farm_hold_days: row.farm_hold_days,
     farm_action: row.farm_action,
@@ -887,6 +897,7 @@ export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null
     if (steps.length < 3 || steps.length > 12) return `${r.slug} has ${steps.length} farm steps`;
     for (const s of steps) if (s.length < 20 || s.length > 600) return `${r.slug} has a farm step of ${s.length} characters`;
     if (!Number.isSafeInteger(r.implied_value_usd) || r.implied_value_usd <= 0) return `${r.slug} has implied value ${r.implied_value_usd}`;
+    if (!Number.isFinite(r.earns_per_1k_usd) || r.earns_per_1k_usd < 0) return `${r.slug} has bad $1k earnings ${r.earns_per_1k_usd}`;
     if (!Number.isSafeInteger(r.implied_low_usd) || r.implied_low_usd < 1 || !Number.isSafeInteger(r.implied_high_usd) || r.implied_high_usd < 1) return `${r.slug} has a bad range ${r.implied_low_usd}..${r.implied_high_usd}`;
     if (!(r.implied_low_usd <= r.implied_value_usd && r.implied_value_usd <= r.implied_high_usd)) return `${r.slug} has a range that does not contain its point ${r.implied_low_usd}..${r.implied_high_usd} vs ${r.implied_value_usd}`;
     if (!Number.isSafeInteger(r.farm_capital_usd) || r.farm_capital_usd <= 0 || !Number.isSafeInteger(r.farm_hold_days) || r.farm_hold_days <= 0 || typeof r.farm_action !== 'string' || r.farm_action.length === 0) return `${r.slug} has a bad farm ticket`;

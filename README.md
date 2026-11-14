@@ -16,7 +16,7 @@ scores every rankable pre-token protocol, and writes:
 - `/output/screenshots/` — three screenshots of the dashboard (board, detail, filtered)
 - `/output/dossier.json` — the judge's dossier, built with the vendored make.fun library
 
-## The model (radar-4)
+## The model (radar-5)
 
 ```
 implied = round( tvl_usd x multiple x growth x age x chains )
@@ -39,11 +39,22 @@ implied = round( tvl_usd x multiple x growth x age x chains )
   in no hurry to launch). Unknown age counts as one year.
 - **chains** — `1 + 0.02` per extra chain, up to four.
 
-## The range and the farm ticket (radar-4)
+## The range, the farm ticket and the $1k earnings (radar-5)
 
 A point value alone pretends to a precision the market does not have, so radar-4 adds two things
-the top boards carry and a point estimate hides:
+the top boards carry and a point estimate hides, and radar-5 adds a third — the one the farmer
+actually asks:
 
+- **$1k earns.** Every row carries what $1,000 deposited is expected to earn: if 10% of the
+  implied launch value is airdropped to farmers pro-rata by TVL, a $1,000 deposit earns
+  100 × implied / TVL dollars. The same assumption the top boards use for their per-$1k
+  earnings column (two of them, independently, converge on exactly this formula). It is the
+  farm ticket's answer to the farmer's real question — not how big the protocol is, but how
+  much a dollar in it earns. A giant whose implied value is small next to its TVL earns
+  little per dollar deposited, however large its total; a small protocol priced generously
+  earns much more per dollar. Steakhouse earns $6.14 per $1,000; the board's best earner per
+  dollar is not its top row. The assumption is stated in the table caption, the model panel
+  and the detail view, so the number is a stated assumption, not a hidden one.
 - **The range.** Every row carries the band half of the priced tokens land in: the 25th and
   75th percentiles of (market cap / fitted market cap) over the 118 calibrators, ×0.35 to
   ×4.02 of the point value here. The row's low and high are its point times that band, shown
