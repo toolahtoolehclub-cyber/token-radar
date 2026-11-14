@@ -1,4 +1,4 @@
-// Token Radar's value model (radar-3): one snapshot of the protocol universe in, one ranked board out.
+// Token Radar's value model (radar-4): one snapshot of the protocol universe in, one ranked board out.
 //
 // The board covers every slug in the snapshot's watchlist (the floor, never a ceiling) and every other
 // pre-token protocol the radar can rank: the early rows the radar exists to find. A protocol is
@@ -35,10 +35,18 @@
 //
 //   implied = max(1, round(base * growth * age * chains))
 //
+// Radar-4 adds what a point estimate hides. The market is noisy (R² = 0.25, residual spread 0.82 in
+// log10), so every row carries the band half of the priced tokens land in: the 25th and 75th
+// percentiles of (market cap / fitted market cap) over the calibrators, about ×0.35 to ×3.90 here.
+// The row's implied value is the line's point; its low and high are the point times that band, so
+// the board shows a range, not a false precision. Every row also carries its farm ticket — the
+// capital one position needs, the hold in days, and the action's short label — so the board reads
+// as a plan at a glance, not just a price.
+//
 // The dashboard states the formula, the fitted slope and intercept, the fit's R-squared and residual
-// spread, and the calibration table, and it draws the fitted line through the live protocols' own
-// points, so the page's code and the board's data are visibly the same arithmetic. No name is ever
-// special-cased.
+// spread, the band, and the calibration table, and it draws the fitted line through the live
+// protocols' own points, so the page's code and the board's data are visibly the same arithmetic.
+// No name is ever special-cased.
 
 /** The snapshot's protocol entry: exactly the ten fields the sealed input carries. */
 export interface SnapshotProtocol {
@@ -99,7 +107,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'radar-3';
+export const MODEL_VERSION = 'radar-4';
 
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -130,6 +138,11 @@ export interface BoardRow {
   token_status: 'pre-token';
   age_days: number | null;
   implied_value_usd: number;
+  implied_low_usd: number;
+  implied_high_usd: number;
+  farm_capital_usd: number;
+  farm_hold_days: number;
+  farm_action: string;
   model: {
     multiple: number;
     growth_pct: number;
@@ -154,6 +167,11 @@ export interface RadarRow {
   listed_at: string | null;
   age_days: number | null;
   implied_value_usd: number;
+  implied_low_usd: number;
+  implied_high_usd: number;
+  farm_capital_usd: number;
+  farm_hold_days: number;
+  farm_action: string;
   multiple: number;
   growth_multiplier: number;
   age_factor: number;
@@ -188,13 +206,17 @@ export interface Calibrator {
   category: string | null;
 }
 
-/** The fitted market line the dashboard draws and states: slope, intercept, fit quality. */
+/** The fitted market line the dashboard draws and states: slope, intercept, fit quality, and the
+ * band half of the priced tokens land in (the 25th and 75th percentiles of market cap over the
+ * fitted market cap, so each row's range is the market's own central band, not a guess). */
 export interface MarketFit {
   slope: number;
   global_intercept: number;
   r2: number;
   residual_sd: number;
   live_count: number;
+  band_low: number;
+  band_high: number;
 }
 
 /** One row of the calibration table the dashboard shows: category, sample size, multiple. */
@@ -217,6 +239,7 @@ export interface RadarData {
   calibration_live: number;
   watchlist_size: number;
   board_size: number;
+  board_total_usd: number;
   early_size: number;
   live_size: number;
   rows: RadarRow[];
@@ -432,12 +455,29 @@ export function calibrate(
   }
   const r2 = ssTot > 0 ? 1 - ssRes / ssTot : 0;
   const residualSd = live.length > 0 ? Math.sqrt(ssRes / live.length) : 0;
+  // The band half of the priced tokens land in: the 25th and 75th percentiles of (market cap /
+  // the line's fitted market cap) over the calibrators, on the line the model actually uses
+  // (per-category intercepts, common slope). A row's low and high are its point times this band,
+  // so the range is the market's own central spread, stated honestly, not a confidence interval
+  // from a distributional assumption.
+  const ratios = live
+    .map((p) => p.mcap_usd! / Math.pow(10, (intercepts.get(p.category ?? '') ?? globalIntercept) + slope * Math.log10(p.tvl_usd)))
+    .sort((a, b) => a - b);
+  const q = (f: number): number => {
+    if (ratios.length === 0) return 1;
+    const at = Math.min(ratios.length - 1, Math.max(0, Math.floor(f * ratios.length)));
+    return ratios[at]!;
+  };
+  const bandLow = round4(Math.max(0.01, q(0.25)));
+  const bandHigh = round4(Math.max(bandLow, q(0.75)));
   const fit: MarketFit = {
     slope: round4(slope),
     global_intercept: round4(globalIntercept),
     r2: round4(r2),
     residual_sd: round4(residualSd),
     live_count: live.length,
+    band_low: bandLow,
+    band_high: bandHigh,
   };
   const calibrators: Calibrator[] = live
     .map((p) => ({ tvl_usd: p.tvl_usd, mcap_usd: p.mcap_usd!, category: p.category }))
@@ -491,6 +531,13 @@ export function buildBoard(
     token_status: 'pre-token' as const,
     age_days: s.v.age,
     implied_value_usd: s.v.implied,
+    // The range: the point times the band half of the priced tokens land in, so the board shows
+    // a range, not a false precision. Clamped at 1 and ordered low <= point <= high.
+    implied_low_usd: Math.max(1, Math.round(s.v.implied * fit.band_low)),
+    implied_high_usd: Math.max(1, Math.round(s.v.implied * fit.band_high)),
+    farm_capital_usd: capitalFor(s.p),
+    farm_hold_days: holdDaysFor(s.v.age),
+    farm_action: farmActionLabel(s.p),
     model: {
       // The multiple is stored at full precision, not rounded: the dashboard recomputes this row
       // from it, and a rounded multiple would recompute to a different implied value.
@@ -539,6 +586,24 @@ function holdDaysFor(age: number | null): number {
   if (age < 180) return 60;
   if (age < 365) return 45;
   return 30;
+}
+
+/** The farm ticket's action, in one short label: the mechanism the farmer actually does. */
+function farmActionLabel(p: SnapshotProtocol): string {
+  const c = (p.category ?? '').toLowerCase();
+  if (c.includes('lend') || c.includes('cdp') || c.includes('collateral')) return 'Supply';
+  if (c.includes('dex') || c.includes('yield') || c.includes('leveraged farm')) return 'Provide liquidity';
+  if (c.includes('bridge')) return 'Bridge';
+  if (c.includes('staking') || c.includes('restak')) return 'Stake';
+  if (c.includes('perpetual') || c.includes('derivative')) return 'Trade';
+  if (c.includes('prediction')) return 'Bet';
+  if (c.includes('curator') || c.includes('allocator')) return 'Vault';
+  if (c.includes('stable')) return 'Mint';
+  if (c.includes('rwa')) return 'Mint yield';
+  if (c.includes('insurance')) return 'Cover';
+  if (c.includes('launchpad')) return 'Join launch';
+  if (c.includes('privacy')) return 'Deposit';
+  return 'Deposit';
 }
 
 /** The category's main action, in the words a farmer can follow. */
@@ -721,6 +786,11 @@ export function radarRow(row: BoardRow, watchlist: Set<string>): RadarRow {
     listed_at: row.listed_at,
     age_days: row.age_days,
     implied_value_usd: row.implied_value_usd,
+    implied_low_usd: row.implied_low_usd,
+    implied_high_usd: row.implied_high_usd,
+    farm_capital_usd: row.farm_capital_usd,
+    farm_hold_days: row.farm_hold_days,
+    farm_action: row.farm_action,
     multiple: row.model.multiple,
     growth_multiplier: row.model.growth_multiplier,
     age_factor: row.model.age_factor,
@@ -745,6 +815,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     calibration_live: calibrationLive,
     watchlist_size: snapshot.watchlist.length,
     board_size: board.length,
+    board_total_usd: board.reduce((s, r) => s + r.implied_value_usd, 0),
     early_size: early,
     live_size: live.length,
     rows: board.map((r) => radarRow(r, watchlist)),
@@ -816,6 +887,9 @@ export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null
     if (steps.length < 3 || steps.length > 12) return `${r.slug} has ${steps.length} farm steps`;
     for (const s of steps) if (s.length < 20 || s.length > 600) return `${r.slug} has a farm step of ${s.length} characters`;
     if (!Number.isSafeInteger(r.implied_value_usd) || r.implied_value_usd <= 0) return `${r.slug} has implied value ${r.implied_value_usd}`;
+    if (!Number.isSafeInteger(r.implied_low_usd) || r.implied_low_usd < 1 || !Number.isSafeInteger(r.implied_high_usd) || r.implied_high_usd < 1) return `${r.slug} has a bad range ${r.implied_low_usd}..${r.implied_high_usd}`;
+    if (!(r.implied_low_usd <= r.implied_value_usd && r.implied_value_usd <= r.implied_high_usd)) return `${r.slug} has a range that does not contain its point ${r.implied_low_usd}..${r.implied_high_usd} vs ${r.implied_value_usd}`;
+    if (!Number.isSafeInteger(r.farm_capital_usd) || r.farm_capital_usd <= 0 || !Number.isSafeInteger(r.farm_hold_days) || r.farm_hold_days <= 0 || typeof r.farm_action !== 'string' || r.farm_action.length === 0) return `${r.slug} has a bad farm ticket`;
   }
   return null;
 }

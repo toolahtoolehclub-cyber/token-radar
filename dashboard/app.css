@@ -212,6 +212,25 @@ dialog.detail::backdrop { background: rgba(4, 8, 16, .72); }
 .scatter .dot { fill: var(--gold-soft); opacity: .75; }
 .scatter .fitline { stroke: var(--gold); stroke-width: 2.5; }
 .scatter .axis { fill: var(--faint); font-size: 11px; }
+/* Range whisker: the line runs from the row's low to its high, the dot is the point value. */
+.range { display: block; margin-top: 5px; }
+.range-track { position: relative; display: block; height: 7px; background: var(--line); border-radius: 4px; }
+.range-line { position: absolute; top: 0; height: 100%; background: var(--blue); opacity: .75; border-radius: 4px; }
+.range-dot { position: absolute; top: 50%; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; background: var(--gold); border-radius: 50%; }
+.range-text { display: block; margin-top: 4px; font-size: 12px; }
+.ticket { min-width: 110px; }
+.ticket b { display: block; font-weight: 650; font-variant-numeric: tabular-nums; }
+.ticket .sub { display: block; margin-top: 2px; }
+.range-detail { margin: 10px 0 2px; }
+.range-detail .range-track { height: 9px; }
+
+/* Distribution histogram */
+.hist-wrap { border-bottom: 1px solid var(--line); }
+.hist-wrap h3 { margin: 0 0 4px; font-size: 15px; }
+.hist { display: block; width: 100%; height: auto; }
+.histbar { fill: var(--gold); opacity: .85; }
+.hist .axis { fill: var(--faint); font-size: 11px; }
+
 .catbars { display: block; width: 100%; height: auto; }
 .catbars .catlabel { fill: var(--text); font-size: 12.5px; }
 .catbars .catbar { fill: var(--gold); opacity: .85; }

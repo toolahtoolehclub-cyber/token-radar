@@ -29,6 +29,30 @@
   function fmtMult(n) { return (Math.round(n * 100) / 100).toFixed(2) + 'x'; }
   function fmtRatio(n) { return (Math.round(n * 1000) / 1000).toFixed(3) + 'x'; }
 
+  // The board's total implied value, for the lede: the 198 rows add up to one number.
+  function boardTotal() {
+    return DATA.rows.reduce(function (s, r) { return s + r.implied_value_usd; }, 0);
+  }
+
+  // A row's range as a whisker on the board's log scale: the line runs from the row's low to its
+  // high, with a dot at the point value, so the board shows a range, not a false precision.
+  function rangeBar(r, lo, hi) {
+    var lx = Math.log10(Math.max(1, r.implied_low_usd));
+    var px = Math.log10(Math.max(1, r.implied_value_usd));
+    var hx = Math.log10(Math.max(1, r.implied_high_usd));
+    var left = ((lx - lo) / (hi - lo)) * 100;
+    var width = Math.max(1, ((hx - lx) / (hi - lo)) * 100);
+    var dot = ((px - lo) / (hi - lo)) * 100;
+    return '<span class="range"><span class="range-track"><span class="range-line" style="left:' + left.toFixed(1) + '%;width:' + width.toFixed(1) + '%"></span><span class="range-dot" style="left:' + dot.toFixed(1) + '%"></span></span></span>';
+  }
+  function rangeScale() {
+    var los = DATA.rows.map(function (r) { return Math.log10(Math.max(1, r.implied_low_usd)); });
+    var his = DATA.rows.map(function (r) { return Math.log10(Math.max(1, r.implied_high_usd)); });
+    var lo = Math.floor(Math.min.apply(null, los));
+    var hi = Math.ceil(Math.max.apply(null, his));
+    return { lo: lo, hi: hi };
+  }
+
   // The model in one function: the page recomputes a row from the snapshot figures and checks the
   // number board.json carries, so the page's code and the board's data are visibly the same arithmetic.
   function impliedOf(row, model) {
@@ -243,12 +267,12 @@
     return el('section', { class: 'lede' },
       el('div', null,
         el('h1', { html: '<em>' + DATA.watchlist_size + ' watchlist protocols</em>, ranked by implied value' }),
-        el('p', { text: 'The watchlist is the floor: every protocol with at least $' + Math.round(DATA.floor_usd / 1e6) + 'M of TVL and no token on record. The early radar adds ' + DATA.early_size + ' more pre-token protocols below that floor, every one the snapshot can rank. Implied value is a model, not a promise.' })
+        el('p', { text: 'The watchlist is the floor: every protocol with at least $' + Math.round(DATA.floor_usd / 1e6) + 'M of TVL and no token on record. The early radar adds ' + DATA.early_size + ' more pre-token protocols below that floor, every one the snapshot can rank. The board\u2019s 198 rows add up to ' + fmtUsd(boardTotal()) + ' of implied value. Implied value is a model, not a promise — and every row carries the range half of the priced tokens land in, so the board shows a range, not a false precision.' })
       ),
       el('div', { class: 'facts' },
         el('div', { class: 'fact' }, el('span', { text: 'Watchlist covered' }), el('b', { text: DATA.watchlist_size + ' / ' + DATA.watchlist_size }), el('small', { text: 'every slug on the list' })),
         el('div', { class: 'fact' }, el('span', { text: 'Pre-token rows scored' }), el('b', { text: String(DATA.board_size) }), el('small', { text: DATA.early_size + ' early rows below the floor' })),
-        el('div', { class: 'fact' }, el('span', { text: 'Top implied value' }), el('b', { text: fmtUsd(DATA.rows[0] ? DATA.rows[0].implied_value_usd : 0) }), el('small', { text: DATA.rows[0] ? DATA.rows[0].name : '' })),
+        el('div', { class: 'fact' }, el('span', { text: 'Board total implied value' }), el('b', { text: fmtUsd(boardTotal()) }), el('small', { text: 'all 198 rows, at the model\u2019s point values' })),
         el('div', { class: 'fact' }, el('span', { text: 'Live-token protocols set aside' }), el('b', { text: String(DATA.live_size) }), el('small', { text: 'their market caps are facts, not models' }))
       )
     );
@@ -302,10 +326,12 @@
       ));
     }
     var max = list[0].implied_value_usd || 1;
+    var scale = rangeScale();
     var tbody = el('tbody');
     list.forEach(function (r) {
       var growth = r.change_7d === null ? 'n/a' : fmtPct(r.change_7d);
       var growthClass = r.change_7d === null ? '' : r.change_7d >= 0 ? 'pos' : 'neg';
+      var chain = (r.chains && r.chains.length ? r.chains[0] : 'its main chain');
       var tr = el('tr', {
         'data-selected': state.selected === r.slug ? 'true' : 'false',
         class: r.rank <= 3 ? 'top3' : null,
@@ -323,23 +349,35 @@
         el('td', { class: 'num', text: fmtAge(r.age_days) }),
         el('td', null, el('div', { class: 'implied' },
           el('div', { class: 'bar', 'aria-hidden': 'true' }, el('i', { style: 'width:' + Math.max(3, Math.round((r.implied_value_usd / max) * 100)) + '%' })),
-          el('span', { class: 'num', text: fmtUsd(r.implied_value_usd) })
+          el('span', { class: 'num', text: fmtUsd(r.implied_value_usd) }),
+          el('span', { class: 'range-text sub', text: fmtUsd(r.implied_low_usd) + ' – ' + fmtUsd(r.implied_high_usd) }),
+          el('span', { html: rangeBar(r, scale.lo, scale.hi) })
+        )),
+        el('td', null, el('div', { class: 'ticket' },
+          el('b', { class: 'num', text: '$' + r.farm_capital_usd + ' · ' + r.farm_hold_days + 'd hold' }),
+          el('span', { class: 'sub', text: r.farm_action + ' · ' + chain })
         )),
         el('td', null, el('span', { class: 'status', text: 'no token' }))
       );
       tbody.appendChild(tr);
     });
     return el('div', { class: 'panel' },
+      el('div', { class: 'pad hist-wrap' },
+        el('h3', { text: 'How the board\u2019s implied values are distributed' }),
+        el('div', { html: histSVG() }),
+        el('p', { class: 'sub', text: 'Most rows are small and a few are large — the log scale shows the shape. The median row is worth ' + fmtUsd(DATA.rows[Math.floor(DATA.rows.length / 2)] ? DATA.rows[Math.floor(DATA.rows.length / 2)].implied_value_usd : 0) + '; the top row is worth ' + fmtUsd(DATA.rows[0] ? DATA.rows[0].implied_value_usd : 0) + '.' })
+      ),
       el('div', { class: 'table-wrap' },
         el('table', null,
-          el('caption', { class: 'sub', text: 'Pre-token protocols, strongest implied value first. Select a row for its model, live comparables and farm plan.' }),
+          el('caption', { class: 'sub', text: 'Pre-token protocols, strongest implied value first. Each row shows the model\u2019s point value and the range half of the priced tokens land in (×' + DATA.fit.band_low.toFixed(2) + ' to ×' + DATA.fit.band_high.toFixed(2) + ' of the point), and its farm ticket: the capital, the hold and the action. Select a row for its model, live comparables and farm plan.' }),
           el('thead', null, el('tr', null,
             sortHeader('implied', 'Rank'),
             sortHeader('name', 'Protocol'),
             sortHeader('tvl', 'TVL'),
             sortHeader('growth', '7d'),
             sortHeader('age', 'Age'),
-            sortHeader('implied', 'Implied value'),
+            sortHeader('implied', 'Implied value, and the model\u2019s range'),
+            el('th', { scope: 'col', class: 'plain', text: 'Farm ticket' }),
             el('th', { scope: 'col', class: 'plain', text: 'Token' })
           )),
           tbody
@@ -444,6 +482,36 @@
     return s;
   }
 
+  // How the board's implied values are distributed, on a log scale: most rows are small, a few
+  // are large, and the shape is the story — the radar exists to find the early ones.
+  function histSVG() {
+    var vals = DATA.rows.map(function (r) { return Math.log10(Math.max(1, r.implied_value_usd)); });
+    if (vals.length === 0) return '';
+    var lo = Math.floor(Math.min.apply(null, vals));
+    var hi = Math.ceil(Math.max.apply(null, vals));
+    var n = 12;
+    var bins = [];
+    var i;
+    for (i = 0; i < n; i++) bins.push(0);
+    vals.forEach(function (v) {
+      var b = Math.min(n - 1, Math.floor(((v - lo) / (hi - lo)) * n));
+      bins[b]++;
+    });
+    var max = Math.max.apply(null, bins);
+    var w = 900, bw = (w - 40) / n, h = 64, padT = 8, padB = 20;
+    var s = '<svg viewBox="0 0 ' + w + ' ' + h + '" class="hist" role="img" aria-label="Distribution of the board\u2019s implied values, log scale">';
+    for (i = 0; i < n; i++) {
+      var bh = Math.max(1, Math.round(((h - padT - padB) * bins[i]) / max));
+      var x = 20 + i * bw + 1;
+      s += '<rect x="' + x.toFixed(1) + '" y="' + (h - padB - bh) + '" width="' + (bw - 2).toFixed(1) + '" height="' + bh + '" rx="2" class="histbar"/>';
+    }
+    s += '<text x="20" y="' + (h - 6) + '" class="axis">' + fmtUsd(Math.pow(10, lo)) + '</text>';
+    s += '<text x="' + (w - 20) + '" y="' + (h - 6) + '" class="axis" text-anchor="end">' + fmtUsd(Math.pow(10, hi)) + '</text>';
+    s += '<text x="' + (w / 2) + '" y="' + (h - 6) + '" class="axis" text-anchor="middle">median ' + fmtUsd(DATA.rows[Math.floor(DATA.rows.length / 2)] ? DATA.rows[Math.floor(DATA.rows.length / 2)].implied_value_usd : 0) + '</text>';
+    s += '</svg>';
+    return s;
+  }
+
   // One strip under the lede: the fitted line, visible on the board's first screen.
   function marketLineStrip() {
     var fit = DATA.fit;
@@ -479,6 +547,7 @@
           'implied = round( tvl_usd x multiple x growth x age x chains )'
         ),
         el('p', { text: 'multiple: the size-fitted multiple for this row — the fitted market line at its TVL, from log10(market cap) = intercept + ' + fit.slope.toFixed(2) + ' x log10(TVL), fitted within categories over ' + fit.live_count + ' live-token protocols, with each category\'s intercept shrunk toward the global intercept of ' + fit.global_intercept.toFixed(2) + ' and the multiple clamped to [' + m.multiple_floor + ', ' + m.multiple_cap + ']. The line explains R² = ' + fit.r2.toFixed(2) + ' of the live market caps, with a residual spread of ' + fit.residual_sd.toFixed(2) + ' in log10 — the market is noisy, so the line is a central tendency, not a prediction. A flat multiple would assume a slope of 1.0; the market\'s own slope is ' + fit.slope.toFixed(2) + '. growth: 1 + clamp(change_7d, ' + m.growth_floor + ', ' + m.growth_cap + ') / 100 x ' + m.growth_weight + '. age: ' + m.age_floor + ' for a newborn protocol, rising to ' + m.age_peak + ' at ' + Math.round(m.age_peak_days / 365) + ' years, then easing by up to ' + Math.round(m.age_decay * 100) + '% over ' + Math.round(m.age_decay_days / 365) + ' more years. chains: 1 + ' + m.chain_step + ' per extra chain, up to ' + m.chain_max_extra + '.' }),
+        el('p', { text: 'The range: every row carries the band half of the priced tokens land in — the 25th and 75th percentiles of (market cap / fitted market cap) over the ' + fit.live_count + ' calibrators, ×' + fit.band_low.toFixed(2) + ' to ×' + fit.band_high.toFixed(2) + ' of the point value. The point is the line\u2019s central estimate; the range is the market\u2019s own central spread, so a row that looks precise is not pretending to be. A farm ticket sits beside every row: the capital one position needs, the hold in days, and the action — the plan at a glance.' }),
         el('p', { text: 'TVL, seven-day growth and age come from the snapshot. Age is the time since the protocol was first listed, the best record of how long it has run with no token; an unlisted age uses ' + m.unknown_age_days + ' days. A protocol records no token, never that it has none: the snapshot cannot prove a token does not exist.' }),
         el('h3', { text: 'The fitted line through the live market' }),
         el('div', { html: scatterSVG(900, 260, true) }),
@@ -578,6 +647,8 @@
         el('div', null, el('span', { text: 'Chains (' + (row.chains || []).length + ')' }), el('b', { class: 'num', text: row.chain_factor.toFixed(2) + 'x' })),
         el('div', { class: 'total' }, el('span', { text: 'Implied value' }), el('b', { class: 'num', text: fmtUsd(row.implied_value_usd) }))
       ),
+      el('p', { text: 'The range half of the priced tokens land in: ' + fmtUsd(row.implied_low_usd) + ' to ' + fmtUsd(row.implied_high_usd) + ' — the point times ×' + DATA.fit.band_low.toFixed(2) + ' to ×' + DATA.fit.band_high.toFixed(2) + '. The market is noisy (R² = ' + DATA.fit.r2.toFixed(2) + '), so the point is a central tendency and the range is the honest spread.' }),
+      el('div', { class: 'range-detail', html: rangeBar(row, rangeScale().lo, rangeScale().hi) }),
       factorBars(row),
       el('p', { class: 'sub', text: 'Model ' + DATA.model_version + ': the same function scores every protocol. The page recomputes this row as ' + fmtUsd(recomputed) + (recomputed === row.implied_value_usd ? ', the same number board.json carries.' : ', which differs from the board: the data would be stale.') + ' This is an estimate, not a price.' })
     );

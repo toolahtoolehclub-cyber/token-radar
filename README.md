@@ -16,7 +16,7 @@ scores every rankable pre-token protocol, and writes:
 - `/output/screenshots/` — three screenshots of the dashboard (board, detail, filtered)
 - `/output/dossier.json` — the judge's dossier, built with the vendored make.fun library
 
-## The model (radar-3)
+## The model (radar-4)
 
 ```
 implied = round( tvl_usd x multiple x growth x age x chains )
@@ -38,6 +38,28 @@ implied = round( tvl_usd x multiple x growth x age x chains )
   years, then easing by up to 15% over three more years (a very long tokenless run reads as a team
   in no hurry to launch). Unknown age counts as one year.
 - **chains** — `1 + 0.02` per extra chain, up to four.
+
+## The range and the farm ticket (radar-4)
+
+A point value alone pretends to a precision the market does not have, so radar-4 adds two things
+the top boards carry and a point estimate hides:
+
+- **The range.** Every row carries the band half of the priced tokens land in: the 25th and
+  75th percentiles of (market cap / fitted market cap) over the 118 calibrators, ×0.35 to
+  ×4.02 of the point value here. The row's low and high are its point times that band, shown
+  as a whisker with a dot at the point, in the table and in the detail view. The band is the
+  market's own central spread, stated in the model panel — not a confidence interval from a
+  distributional assumption, and not a narrower band chosen to look precise.
+- **The farm ticket.** Every row carries the capital one position needs ($50–$150, from its
+  own TVL), the hold in days (30–60, from its age), and the action's short label (Vault,
+  Supply, Provide liquidity, Bridge, Stake, Trade, Bet, Mint, Cover, Join launch, Deposit),
+  so the board reads as a plan at a glance. The full seven-step plan is in the detail view,
+  unchanged: each step's action, cost and time derive from the protocol's own category, chains,
+  TVL, age, seven-day move and implied value.
+
+The lede states the board's total implied value ($2.29B at the point values), and a log-scale
+histogram above the table shows how the 198 values are distributed — most rows small, a few
+large, the median row worth $5.3M.
 
 A protocol is pre-token when its record carries no token (no market cap, no CoinGecko id, no
 symbol). Live-token protocols are set aside with their market caps shown — the market's own
