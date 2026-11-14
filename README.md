@@ -1,6 +1,6 @@
 # Token Radar
 
-A token launch radar: 289 pre-token protocols from one frozen DefiLlama snapshot, ranked by an
+A token launch radar: 198 pre-token protocols from one frozen DefiLlama snapshot, ranked by an
 implied value the model derives from the snapshot's own figures — and a farm plan for each one.
 
 ## What it does
@@ -8,8 +8,8 @@ implied value the model derives from the snapshot's own figures — and a farm p
 `main.ts` (Node 22, standard library only) reads the sealed snapshot at `/input/snapshot.json`,
 scores every rankable pre-token protocol, and writes:
 
-- `/output/board.json` — the ranked board (289 rows: all 40 watchlist protocols plus every other
-  rankable pre-token protocol the snapshot holds)
+- `/output/board.json` — the ranked board (198 rows: all 40 watchlist protocols plus 158 more
+  rankable pre-token protocols the snapshot holds)
 - `/output/data.js` — the same board, compact, for the dashboard
 - `/output/dashboard/` — the static page: sortable and filterable board, a detail view per
   protocol, a live-token view, and the model with its calibration table
