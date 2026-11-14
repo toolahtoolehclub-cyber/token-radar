@@ -138,6 +138,13 @@
     if (c.indexOf('insurance') >= 0) return 'Renew or extend the cover by $10 once a week so the policy stays current.';
     if (c.indexOf('launchpad') >= 0) return 'Vote or check in on ' + name + "'s next launch each week so the wallet stays on its list.";
     if (c.indexOf('privacy') >= 0) return 'Make one small private transfer through ' + name + ' each week so the wallet stays active.';
+    if (c.indexOf('basis') >= 0) return 'Check the funding rate on ' + name + ' once a week and roll $10 of the basis trade so the position stays delta-neutral.';
+    if (c.indexOf('chain') >= 0) return 'Bridge $10 onto ' + chain + ' and use one dApp there each week so the wallet shows chain activity.';
+    if (c.indexOf('liquidity') >= 0) return 'Rebalance $10 through ' + name + "'s managed pools once a week so the wallet shows active liquidity.";
+    if (c.indexOf('cedefi') >= 0) return 'Check the yield ' + name + ' paid this week and compound $10 of it back into the same vault.';
+    if (c.indexOf('leverag') >= 0) return 'Harvest the leveraged rewards on ' + name + ' once a week and restake $10 of them so the position compounds.';
+    if (c.indexOf('farm') >= 0) return 'Harvest ' + name + "'s rewards once a week and restake $10 of them so the position compounds.";
+    if (c.indexOf('btc') >= 0) return 'Mint or redeem $10 of the BTC-backed asset through ' + name + ' once a week to show both directions.';
     return 'Make one small action on ' + name + ' each week, such as a swap, a vote or a deposit, so the wallet stays active.';
   }
   function watchStepFor(p, chain) {

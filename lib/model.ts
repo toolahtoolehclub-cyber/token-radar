@@ -651,6 +651,13 @@ function weeklyActionFor(p: SnapshotProtocol, chain: string): string {
   if (c.includes('insurance')) return `Renew or extend the cover by $10 once a week so the policy stays current.`;
   if (c.includes('launchpad')) return `Vote or check in on ${name}'s next launch each week so the wallet stays on its list.`;
   if (c.includes('privacy')) return `Make one small private transfer through ${name} each week so the wallet stays active.`;
+  if (c.includes('basis')) return `Check the funding rate on ${name} once a week and roll $10 of the basis trade so the position stays delta-neutral.`;
+  if (c.includes('chain')) return `Bridge $10 onto ${chain} and use one dApp there each week so the wallet shows chain activity.`;
+  if (c.includes('liquidity')) return `Rebalance $10 through ${name}'s managed pools once a week so the wallet shows active liquidity.`;
+  if (c.includes('cedefi')) return `Check the yield ${name} paid this week and compound $10 of it back into the same vault.`;
+  if (c.includes('leverag')) return `Harvest the leveraged rewards on ${name} once a week and restake $10 of them so the position compounds.`;
+  if (c.includes('farm')) return `Harvest ${name}'s rewards once a week and restake $10 of them so the position compounds.`;
+  if (c.includes('btc')) return `Mint or redeem $10 of the BTC-backed asset through ${name} once a week to show both directions.`;
   return `Make one small action on ${name} each week, such as a swap, a vote or a deposit, so the wallet stays active.`;
 }
 
