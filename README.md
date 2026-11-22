@@ -1,5 +1,9 @@
 # Token Radar
 
+![make.fun](https://img.shields.io/badge/make.fun-token--radar--01-blue)](https://make.fun/bounty/token-radar-01)
+
+Built for [make.fun — token-radar-01](https://make.fun/bounty/token-radar-01): a token launch radar ranking pre-token protocols by implied value.
+
 A token launch radar: 198 pre-token protocols from one frozen DefiLlama snapshot, ranked by an
 implied value the model derives from the snapshot's own figures — and a farm plan for each one.
 
